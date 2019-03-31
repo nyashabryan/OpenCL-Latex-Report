@@ -1,52 +1,74 @@
 \section{Methodology}
-In this section you should describe the method of the experiment.
 
-\subsection{Hardware}
-Include detail such as the hardware used.  It's generally a good idea to include a block diagram at this point, such as the one presented in Fig.~\ref{fig:RS-232_Test}.  This figure was drawn in \href{http://www.inkscape.org/}{InkScape}~\cite{InkScape}.  When you want to import an InkScape figure (SVG format) into \LaTeX{}, simply save it to PDF (use the drawing extents as the media box area) and include the figure.
+\subsection{Speed-Up}
 
-\Figure{Test setup used to test the implementation~\cite{Taylor_2016}.}{RS-232_Test}
+\subsection{Data Transfer Overhead}
+The OpenCl interface operates asynchronously. It may start to process data before all data from the CPU has been copied to the GPU. It may also allow the completed data to be read from the GPU before the whole set of data has been processed. To measure the overhead concerned with writing and reading data from the GPU it was neccessary to ensure that OpenCl waited for a single process to end before another process could be started. This was implemeted in code using the clFinish function at the end of the OpenCL\_WriteData function and the end of the OpenCL\_ReadData function. The code snippet below shows how this was implemented in C.
 
-\subsection{Implementation}
-Also mention the implementation source code:
-
-\begin{Matlab}
-# You can include inline Matlab / Octave code
-x = linspace(0, 2*pi, 1000);
-y = sin(x);
-plot(x, y); grid on;
-\end{Matlab}
-
-or you could turn it into a float: see listing~\ref{lst:OpenCL_Matrix_Mult}.  Floats are tables, figures and listings that appear at a different place than in the source code.  This template is set up to put floats at the top of the next column, as prescribed by the IEEE article specification.
-
-\begin{OpenCL_float}{OpenCL kernel to perform matrix multiplication}{OpenCL_Matrix_Mult}
-__kernel void Multiply(
- __global float* A, // Global input buffer
- __global float* B, // Global input buffer
- __global float* Y, // Global output buffer
-   const  int    N  // Global uniform
-){
- const int i = get_global_id(0); // 1st dimension index
- const int j = get_global_id(1); // 2nd dimension index
-
- // Private variables
- int   k;
- float f = 0.0;
-
- // Kernel body
- for(k = 0; k < N; k++) f += A[i*N + k] * B[k*N + j];
- Y[i*N + j] = f;
+\begin{Cpp}
+bool OpenCL_ReadData(cl_mem Buffer, size_t Size, void* Data){
+	cl_int error = clEnqueueReadBuffer(
+	Commands,
+	Buffer,
+	CL_TRUE,
+	0,
+	Size,
+	Data,
+	0, 0, 0
+	);
+	if(error != CL_SUCCESS){
+		printf("Error: Failed to read buffer\n");
+		return false;
+	}
+	// Wait for the commands to get serviced
+	clFinish(Commands);
+	return true;
 }
-\end{OpenCL_float}
 
-Only list what is relevant.  Don't give too much detail - just enough to show what you've done.  This template supports the following languages:
+bool OpenCL_WriteData(cl_mem Buffer, size_t Size, void* Data){
+	cl_int error = clEnqueueWriteBuffer(
+	Commands,
+	Buffer,
+	CL_TRUE,
+	0,
+	Size,
+	Data,
+	0, 0, 0
+	);
+	if(error != CL_SUCCESS){
+		printf("Error: Failed to write buffer.\n");
+		return false;
+	}
+	// Wait for the commands to get serviced
+	clFinish(Commands);
+	return true;
+}
+\end{Cpp}
+\\
+For each NxN sized matrix, matrix multiplication was carried out on a NVDIA GeForce GT435M GPU using the OpenCL interface. The time taken for each data subset to be processed was measured and recorded. Run Time was measured using the tic() and toc() functions defined in C.The code snippet below shows how this was implemented in C.
 
-\begin{itemize}
- \item Matlab (Octave)
- \item GLSL
- \item OpenCL
- \item Verilog
- \item C++ (use the name ``Cpp'')
-\end{itemize}
-  
-\subsection{Experiment Procedure}
-Furthermore, include detail relating to the experiment itself: what did you do, in what order was this done, why was this done, etc.  What are you trying to prove / disprove?
+\begin{Cpp}
+
+
+void Process_OpenCL(){
+	//printf("\n");
+	
+	OpenCL_ConstantInt(3, N);
+	
+	OpenCL_WriteData(A_Buffer, N*N*sizeof(float), A);
+	OpenCL_WriteData(B_Buffer, N*N*sizeof(float), B);
+	
+	//start time
+	tic();
+	
+	OpenCL_Run(N, LocalSize);
+	
+	//stop time
+	printf("%lg", toc()/1e-3);
+	
+	OpenCL_ReadData(OutputBuffer, N*N*sizeof(float), Output_OpenCL);
+}
+		
+\end{Cpp}
+
+\vspace{-11mm}
